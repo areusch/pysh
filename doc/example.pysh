@@ -1,0 +1,21 @@
+#!/bin/sh -e
+#
+# This is a PySH script, a shell script written in Python.
+# It requires Python 3 and the `pysh` package.
+
+# PySH bootstrap -->
+"eval" "echo" "\"import sys\ntry:\n  import pysh\n  pysh.main(\\\"$0\\\")\nexcept ImportError:\n  print(\\\"pysh: error: pip not installed :(\\\", file=sys.stderr)\"" "|" "python3" "-" "$@"
+"eval" "exit" "$?"
+# <-- PySH bootstrap
+
+import sys
+
+print('Hello from Python!')
+sys.stdout.flush()
+!echo test
+
+foo_output = !echo foo
+print('captured: %r' % (foo_output, ))
+sys.stdout.flush()
+!echo foo {foo_output}
+sys.exit(3)

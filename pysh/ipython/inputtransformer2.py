@@ -10,11 +10,35 @@ deprecated in 7.0.
 # Copyright (c) IPython Development Team.
 # Distributed under the terms of the Modified BSD License.
 
+from __future__ import print_function
 from codeop import compile_command
+import collections
 import re
 import tokenize
-from typing import List, Tuple, Union
 import warnings
+import sys
+
+if sys.version_info[0] == 3:
+    splitlines = str.splitlines
+else:
+
+    SPLITLINE_RE = re.compile(
+        '\n|\r|(?:\r\n)|\v|\f|\x1c|\x1d|\x1e|\x85\u2028\u2029')
+
+    def splitlines(s, keepends=False):
+        if not keepends:
+            return s.split(u'\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029')
+
+        lines = []
+        while s:
+            m = SPLITLINE_RE.search(s)
+            if not m:
+                break
+            lines.append(s[:m.end()])
+            s = s[m.end():]
+
+        lines.append(s)
+        return lines
 
 _indent_re = re.compile(r'^[ \t]+')
 
@@ -100,7 +124,7 @@ def cell_magic(lines):
             % (magic_name, first_line, body)]
 
 
-def _find_assign_op(token_line) -> Union[int, None]:
+def _find_assign_op(token_line): # -> Union[int, None]:
     """Get the index of the first assignment in the line ('=' not inside brackets)
 
     Note: We don't try to support multiple special assignment (a = b = %foo)
@@ -116,7 +140,7 @@ def _find_assign_op(token_line) -> Union[int, None]:
             if paren_level > 0:
                 paren_level -= 1
 
-def find_end_of_continued_line(lines, start_line: int):
+def find_end_of_continued_line(lines, start_line): #: int):
     """Find the last line of a line explicitly extended using backslashes.
 
     Uses 0-indexed line numbers.
@@ -128,7 +152,7 @@ def find_end_of_continued_line(lines, start_line: int):
             break
     return end_line
 
-def assemble_continued_line(lines, start: Tuple[int, int], end_line: int):
+def assemble_continued_line(lines, start, end_line): #: Tuple[int, int], end_line: int):
     r"""Assemble a single line from multiple continued line pieces
 
     Continued lines are lines ending in ``\``, and the line following the last
@@ -198,7 +222,7 @@ class TokenTransformBase:
         """
         raise NotImplementedError
 
-    def transform(self, lines: List[str]):
+    def transform(self, lines): #: List[str]):
         """Transform one instance of special syntax found by ``find()``
 
         Takes a list of strings representing physical lines,
@@ -220,7 +244,7 @@ class MagicAssign(TokenTransformBase):
                     and (line[assign_ix+2].type == tokenize.NAME):
                 return cls(line[assign_ix+1].start)
 
-    def transform(self, lines: List[str]):
+    def transform(self, lines): #: List[str]):
         """Transform a magic assignment found by the ``find()`` classmethod.
         """
         start_line, start_col = self.start_line, self.start_col
@@ -259,7 +283,7 @@ class SystemAssign(TokenTransformBase):
                         break
                     ix += 1
 
-    def transform(self, lines: List[str]):
+    def transform(self, lines): #: List[str]):
         """Transform a system assignment found by the ``find()`` classmethod.
         """
         start_line, start_col = self.start_line, self.start_col
@@ -462,7 +486,72 @@ class HelpEnd(TokenTransformBase):
 
         return lines_before + [new_line] + lines_after
 
-def make_tokens_by_line(lines:List[str]):
+import token
+EXACT_TOKEN_TYPES = {
+    '(':   token.LPAR,
+    ')':   token.RPAR,
+    '[':   token.LSQB,
+    ']':   token.RSQB,
+    ':':   token.COLON,
+    ',':   token.COMMA,
+    ';':   token.SEMI,
+    '+':   token.PLUS,
+    '-':   token.MINUS,
+    '*':   token.STAR,
+    '/':   token.SLASH,
+    '|':   token.VBAR,
+    '&':   token.AMPER,
+    '<':   token.LESS,
+    '>':   token.GREATER,
+    '=':   token.EQUAL,
+    '.':   token.DOT,
+    '%':   token.PERCENT,
+    '{':   token.LBRACE,
+    '}':   token.RBRACE,
+    '==':  token.EQEQUAL,
+    '!=':  token.NOTEQUAL,
+    '<=':  token.LESSEQUAL,
+    '>=':  token.GREATEREQUAL,
+    '~':   token.TILDE,
+    '^':   token.CIRCUMFLEX,
+    '<<':  token.LEFTSHIFT,
+    '>>':  token.RIGHTSHIFT,
+    '**':  token.DOUBLESTAR,
+    '+=':  token.PLUSEQUAL,
+    '-=':  token.MINEQUAL,
+    '*=':  token.STAREQUAL,
+    '/=':  token.SLASHEQUAL,
+    '%=':  token.PERCENTEQUAL,
+    '&=':  token.AMPEREQUAL,
+    '|=':  token.VBAREQUAL,
+    '^=':  token.CIRCUMFLEXEQUAL,
+    '<<=': token.LEFTSHIFTEQUAL,
+    '>>=': token.RIGHTSHIFTEQUAL,
+    '**=': token.DOUBLESTAREQUAL,
+    '//':  token.DOUBLESLASH,
+    '//=': token.DOUBLESLASHEQUAL,
+    '@':   token.AT,
+}
+if sys.version_info[0] == 3:
+    EXACT_TOKEN_TYPES['...'] = token.ELLIPSIS
+    EXACT_TOKEN_TYPES['->'] = token.RARROW
+    EXACT_TOKEN_TYPES['@='] = token.ATEQUAL
+
+
+class TokenInfo(collections.namedtuple('TokenInfo', 'type string start end line')):
+    def __repr__(self):
+        annotated_type = '%d (%s)' % (self.type, token.tok_name[self.type])
+        return ('TokenInfo(type=%s, string=%r, start=%r, end=%r, line=%r)' %
+                self._replace(type=annotated_type))
+
+    @property
+    def exact_type(self):
+        if self.type == OP and self.string in EXACT_TOKEN_TYPES:
+            return EXACT_TOKEN_TYPES[self.string]
+        else:
+            return self.type
+
+def make_tokens_by_line(lines): #:List[str]):
     """Tokenize a series of lines and group tokens by line.
 
     The tokens for a multiline Python string or expression are grouped as one
@@ -481,7 +570,9 @@ def make_tokens_by_line(lines:List[str]):
         warnings.warn("`make_tokens_by_line` received a list of lines which do not have lineending markers ('\\n', '\\r', '\\r\\n', '\\x0b', '\\x0c'), behavior will be unspecified")
     parenlev = 0
     try:
-        for token in tokenize.generate_tokens(iter(lines).__next__):
+        iter_lines = iter(lines)
+        for token in tokenize.generate_tokens(lambda: next(iter_lines)):
+            token = TokenInfo(*token)
             tokens_by_line[-1].append(token)
             if (token.type == NEWLINE) \
                     or ((token.type == NL) and (parenlev <= 0)):
@@ -502,11 +593,11 @@ def make_tokens_by_line(lines:List[str]):
 
     return tokens_by_line
 
-def show_linewise_tokens(s: str):
+def show_linewise_tokens(s): #: str):
     """For investigation and debugging"""
     if not s.endswith('\n'):
         s += '\n'
-    lines = s.splitlines(keepends=True)
+    lines = splitlines(s, keepends=True)
     for line in make_tokens_by_line(lines):
         print("Line -------")
         for tokinfo in line:
@@ -579,18 +670,18 @@ class TransformerManager:
         raise RuntimeError("Input transformation still changing after "
                            "%d iterations. Aborting." % TRANSFORM_LOOP_LIMIT)
 
-    def transform_cell(self, cell: str) -> str:
+    def transform_cell(self, cell): #: str): -> str:
         """Transforms a cell of input code"""
         if not cell.endswith('\n'):
             cell += '\n'  # Ensure the cell has a trailing newline
-        lines = cell.splitlines(keepends=True)
+        lines = splitlines(cell, keepends=True)
         for transform in self.cleanup_transforms + self.line_transforms:
             lines = transform(lines)
 
         lines = self.do_token_transforms(lines)
         return ''.join(lines)
 
-    def check_complete(self, cell: str):
+    def check_complete(self, cell): #: str):
         """Return whether a block of code is ready to execute, or should be continued
 
         Parameters
@@ -623,7 +714,7 @@ class TransformerManager:
             # See https://bugs.python.org/issue33899
             cell += '\n'
 
-        lines = cell.splitlines(keepends=True)
+        lines = splitlines(cell, keepends=True)
 
         if not lines:
             return 'complete', None

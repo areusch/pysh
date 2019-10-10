@@ -1,0 +1,16 @@
+* PySH - Python for shell scripting
+** Idea: Write shell scripts with Python, but retain the nice bash-like subprocess functionality
+** Parts
+*** Shell script header which auto-installs PySH
+*** Convenient access to a bash-like interface
+*** Python 2/3 agnostic
+*** A way to import Python libraries easily. Two cases:
+**** Scripts in the project
+***** Create a synthetic module? Inject into sys.path?
+***** Issue is if any other sys.path entries come in front of that path.
+**** PyPI libraries
+***** Pipenv virtualenv
+*** Unit tests?
+** Non-goals
+*** Fancy command-line parser
+*** General script utilities
