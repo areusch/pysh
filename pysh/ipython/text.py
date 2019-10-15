@@ -339,7 +339,6 @@ class FullEvalFormatter(Formatter):
         for literal_text, field_name, format_spec, conversion in \
                 self.parse(format_string):
 
-            print('vformat', literal_text, 'f=', field_name, 'fs=', format_spec, 'c=', conversion, 'kw=', field_name in kwargs, file=sys.stderr)
             # output the literal text
             if literal_text:
                 result.append(literal_text)

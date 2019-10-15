@@ -14,3 +14,28 @@
 ** Non-goals
 *** Fancy command-line parser
 *** General script utilities
+
+
+* Post-v0.0.1 thoughts
+** Solving two problems at once:
+   - making shell scripting in python somewhat readable
+   - distributing pysh scripts to systems without pysh
+** Why make people risk using insecure pip just to run a script?
+   - possible next step: dist scripts vs gen scripts
+   - gen scripts presume pysh is installed already. these are suitable for
+     production use where unexpected software installation is bad.
+   - dist scripts contain commented copy of get-pip.py; this is executed by the
+     bootstrap when pip is not there.
+     - but the get-pip.py security model is that you use it shortly after you
+       get it?
+       - solution: dist should avoid affecting the system, because dist
+         shouldn't require anything over what it already contains.
+       - dist should contain an entire copy of virtualenv (for 2.x compat) and
+         install it in a local temp dir. it could save the temp dir to minimize
+         future setup time.
+
+** Why not #!/usr/bin/python -mpysh
+   - Specifying /usr/bin/python is presumptive; /usr/local/bin etc are possible.
+   - /bin/sh always exists
+   - The header sucks but that flexibility alone is worht it, especially given
+     preference for python3.

@@ -67,7 +67,7 @@ well_formed_header = (('#!/bin/sh -e\n'
                       ('# <-- PySH Information\n'
                        '\n'
                        '# PySH Bootstrap -->\n') +
-                      '\n'.join(generator.PYSH_BOOTSTRAP_SECTION) + '\n' +
+                      '\n'.join(generator.make_bootstrap_lines(False)) + '\n' +
                       ('# <-- PySH Bootstrap\n'))
 
 well_formed = well_formed_header + basic_content
@@ -98,7 +98,7 @@ def test_parse_and_generate(case_name):
 
   assert out.getvalue() == expected_out
 
-  p.normalize()
+  p.normalize(False)
   out = six.StringIO()
   p.write(out)
 

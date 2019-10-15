@@ -1,8 +1,21 @@
 """Defines code that generates the script header."""
 
+from __future__ import print_function
+import base64
 import collections
 import os
 import re
+import stat
+import sys
+import zipfile
+
+if sys.version_info[0] == 3:
+  import io
+  BytesIO = io.BytesIO
+else:
+  import cStringIO
+  BytesIO = cStringIO.StringIO
+
 
 
 SHBANG_LINE = "#!/bin/sh -e"
@@ -19,10 +32,60 @@ PYSH_INFO_SECTION = """\
 PYSH_BOOTSTRAP_SECTION_NAME = 'PySH Bootstrap'
 
 
-PYSH_BOOTSTRAP_SECTION = """\
-"eval" "echo" "\\"import sys\\ntry:\\n  import pysh\\n  pysh.main(\\\"$0\\\")\nexcept ImportError:\\n  print(\\\"pysh: error: pip not installed :(\\\", file=sys.stderr)\\"" "|" "python3" "-" "$@"
-"eval" "exit" "$?"
-""".split('\n')
+_PYSH_PIP_PACKAGE = 'https://github.com/areusch/pysh/archive/master.zip'
+
+
+_EMBEDDED_MODULE_NOTICE = '# PySH: Module embedded below'
+
+
+_NORMAL_PY_SCRIPT = """\
+from __future__ import print_function
+try:
+  import pysh
+except ImportError:
+  print('pysh: script $0 requires the pysh package. Install it with:', file=sys.stderr)
+  print('      $ pip install {_PYSH_PIP_PACKAGE}')
+  raise SystemExit(8)
+pysh.main('$0')
+""".format(_PYSH_PIP_PACKAGE=_PYSH_PIP_PACKAGE)
+
+
+_DISTRIBUTABLE_PY_SCRIPT = """\
+from base64 import b64decode
+import sys
+import tempfile
+with open('$0') as script_f:
+  with tempfile.NamedTemporaryFile(suffix='.zip') as f:
+    f.write(b64decode(eval(script_f.read().split('{_EMBEDDED_MODULE_NOTICE}\\n', 1)[1])))
+    f.flush()
+    sys.path.append(f.name)
+    import pysh
+    pysh.main('$0')
+""".format(_EMBEDDED_MODULE_NOTICE=_EMBEDDED_MODULE_NOTICE)
+
+
+_ESCAPE_SEQ = re.compile(r'\\(?P<char>.)')
+
+
+def make_bootstrap_lines(dist):
+  script = _DISTRIBUTABLE_PY_SCRIPT if dist else _NORMAL_PY_SCRIPT
+#  script = "'foo\\n'"
+#  m = _ESCAPE_SEQ.search(script)
+#  print('m={!r} {!r}'.format(m.group(1), m.groupdict()))
+  _py = _ESCAPE_SEQ.sub(r'\\\\\\\1', script).replace('\n', '\\n')
+#  print('py={!s}'.format(_py), file=sys.stderr)
+
+  sh_evals = (
+    ('python_bin=`which python3`; '
+     'if [ -z \"${python_bin}\" ]; then python_bin=`which python`; fi',),
+    ('echo', '"{_py}"'.format(_py=_py), '|', '${python_bin}', '-', '$@'),
+    ('exit', '$?'),
+  )
+#  print('shevals={!s}'.format(sh_evals[1][1]), file=sys.stderr)
+
+  return [' '.join(['"{}"'.format(_ESCAPE_SEQ.sub(r'\\\\\\\1', x).replace('"', '\\"'))
+                    for x in ["eval"] + list(e)])
+    for e in sh_evals]
 
 
 Metadata = collections.namedtuple('Metadata', ('leading', 'name', 'content'))
@@ -120,9 +183,10 @@ class Parser:
 class ParsedScript:
   """Encodes a parsed PySH script."""
 
-  def __init__(self, metadata, content):
+  def __init__(self, metadata, content, dist):
     self._metadata = collections.OrderedDict(metadata)
     self._content = content
+    self._dist = dist
 
   @property
   def metadata(self):
@@ -179,12 +243,6 @@ class ParsedScript:
   def parse(cls, script_f, force=False):
     parser = Parser(script_f)
 
-    # is_executable_file = False
-    # if hasattr(script_f, 'fileno'):
-    #   f_stat = os.fstat(script_f.fileno())
-    #   is_executable_file = (f_stat.st_mode & (stat.ST_IXUSR |
-    #                                           stat.ST_IXOTH)) != 0
-
     shbang = next(parser)
     missing_shbang = not shbang.startswith('#!')
     if not missing_shbang:
@@ -205,14 +263,20 @@ class ParsedScript:
 
       metadata[md.name] = md
 
+    dist = False
     _, content = parser.fetch()
+    for i, line in enumerate(content):
+      if line == _EMBEDDED_MODULE_NOTICE:
+        content = content[:i]
+        dist = True
+        break
 
     if missing_shbang and not metadata:
       content = f_shbang_lines + content
 
-    return cls(metadata, content)
+    return cls(metadata, content, dist)
 
-  def normalize(self):
+  def normalize(self, dist):
     """Add required sections to the pysh file."""
     old_md = self._metadata
     self._metadata = collections.OrderedDict()
@@ -229,9 +293,11 @@ class ParsedScript:
 
         self.metadata[s] = old_md[s]
 
+    bootstrap_section_lines = make_bootstrap_lines(dist)
     self.metadata[PYSH_BOOTSTRAP_SECTION_NAME] = Metadata(
       leading=[''], name=PYSH_BOOTSTRAP_SECTION_NAME,
-      content=PYSH_BOOTSTRAP_SECTION)
+      content=bootstrap_section_lines)
+    self._dist = dist
 
   def write(self, script_f):
     script_f.write('{}\n'.format(SHBANG_LINE))
@@ -244,13 +310,67 @@ class ParsedScript:
       script_f.write(self.METADATA_END_FMT.format(name))
 
     script_f.write('\n'.join(self._content))
+    if self._dist:
+      script_f.write('{}\n'.format(_EMBEDDED_MODULE_NOTICE))
+      module_f = BytesIO()
+      zip_f = zipfile.ZipFile(module_f, 'w', zipfile.ZIP_DEFLATED)
+      top = os.path.dirname(__file__)
+      for dirpath, _, files in os.walk(top):
+        for file_name in files:
+          if not file_name.endswith('.py'):
+            continue
+
+          zip_path = os.path.relpath(
+            os.path.realpath('{}/{}'.format(dirpath, file_name)),
+            os.path.dirname(top))
+          with open(os.path.sep.join([dirpath, file_name]), 'rb') as f:
+            zip_f.writestr(zip_path, f.read())
+
+      zip_f.close()
+
+      script_f.write('"""')
+      b64_encoded = base64.b64encode(module_f.getvalue())
+      if sys.version_info[0] == 3:
+        b64_encoded = str(b64_encoded, 'utf-8')
+      script_f.write(b64_encoded)
+      script_f.write('"""\n')
 
 
-def generate(script_path):
-  with open(script_path) as script_f:
-    script = ParsedScript.parse(script_f)
+def generate(script_path_arg, dist=False):
+  if script_path_arg == '-':
+    script_f = sys.stdin
+  else:
+    script_f = open(script_path_arg)
 
-  script.normalize()
+  try:
+    parser = Parser(script_f)
+    script = ParsedScript.parse(parser)
+  finally:
+    script_f.close()
 
-  with open(script_path, 'w') as script_f:
+  script.normalize(dist)
+
+  if script_path_arg == '-':
+    script_f = sys.stdout
+  else:
+    tmp_name = '{}.tmp'.format(script_path_arg)
+    while os.path.exists(tmp_name):
+      tmp_name = '{}.tmp.{}'.format(script_path_arg, random.randint(0,100))
+
+    script_f = open(tmp_name, 'w')
+
+  try:
     script.write(script_f)
+  finally:
+    script_f.close()
+
+  if script_path_arg != '-':
+    os.unlink(script_path_arg)
+    os.rename(tmp_name, script_path_arg)
+
+    st = os.stat(script_path_arg)
+    print('stat {}: {:o} {:o}'.format(script_path_arg, st.st_mode, stat.S_IXUSR), file=sys.stderr)
+    if (st.st_mode & stat.S_IXUSR) == 0:
+      new_mode = st.st_mode | stat.S_IXUSR
+      print('chmod {}: {:o}'.format(script_path_arg, new_mode), file=sys.stderr)
+      os.chmod(script_path_arg, new_mode)

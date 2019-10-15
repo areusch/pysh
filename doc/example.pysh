@@ -4,7 +4,8 @@
 # It requires Python 3 and the `pysh` package.
 
 # PySH bootstrap -->
-"eval" "echo" "\"import sys\ntry:\n  import pysh\n  pysh.main(\\\"$0\\\")\nexcept ImportError:\n  print(\\\"pysh: error: pip not installed :(\\\", file=sys.stderr)\"" "|" "python3" "-" "$@"
+"eval" "python_bin=`which python3`; if [ -z \"${python_bin}\" ]; then python_bin=`which python`; fi"
+"eval" "echo" "\"from __future__ import print_function\nimport sys\ntry:\n  import pysh\n\nexcept ImportError:\n  try:\n    import pip\n  except ImportError:\n    print('pysh: error: pip not installed :(', file=sys.stderr)\n  import subprocess\n  subprocess.call([sys.executable, '-mpip', 'install', 'https://github.com/areusch/pysh/archive/master.zip'], stdout=open('/dev/stderr', 'w'))\n  import pysh\npysh.main('$0')\n\"" "|" "${python_bin}" "-" "$@"
 "eval" "exit" "$?"
 # <-- PySH bootstrap
 

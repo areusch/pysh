@@ -4,6 +4,7 @@ import argparse
 import os
 import os.path
 import sys
+from . import generator
 from . import pysh
 
 USAGE = """\
@@ -21,12 +22,18 @@ def parse_args(argv=None):
   parser = argparse.ArgumentParser(usage=USAGE)
   subparsers = parser.add_subparsers(dest='subcommand')
 
-  run = subparsers.add_parser('run', help='run a pysh script')
-  run.add_argument('script_path', help='path to the script')
-  run.add_argument('args', nargs='*')
+  dist = subparsers.add_parser(
+    'dist',
+    help=('add header and a copy of pysh module to a pysh script, for '
+          'standalone distribution to systems without pysh'))
+  dist.add_argument('script_path', help='path to the script')
 
   gen = subparsers.add_parser('gen', help='add header to pysh script')
   gen.add_argument('script_path', help='path to the script')
+
+  run = subparsers.add_parser('run', help='run a pysh script')
+  run.add_argument('script_path', help='path to the script')
+  run.add_argument('args', nargs='*')
 
   argv = argv if argv is not None else sys.argv[1:]
   if sys.argv[0] not in ('run', 'gen') and os.path.exists(argv[0]):
@@ -36,36 +43,11 @@ def parse_args(argv=None):
 
 
 def _GenCommand(args):
-  if args.script_path == '-':
-    script_f = sys.stdin
-  else:
-    script_f = open(args.script_path)
+  generator.generate(args.script_path, dist=False)
 
-  try:
-    parser = generator.Parser(script_f)
-    script = generator.ParsedScript.parse(parser)
-  finally:
-    script_f.close()
 
-  script.normalize()
-
-  if args.script_path == '-':
-    script_f = sys.stdout
-  else:
-    tmp_name = '{}.tmp'.format(args.script_path)
-    while os.path.exists(tmp_name):
-      tmp_name = '{}.tmp.{}'.format(args.script_path, random.randint(0,100))
-
-    script_f = open(tmp_name, 'w')
-
-  try:
-    script.write(script_f)
-  finally:
-    script_f.close()
-
-  if args.script_path != '-':
-    os.unlink(args.script_path)
-    os.rename(tmp_name, args.script_path)
+def _DistCommand(args):
+  generator.generate(args.script_path, dist=True)
 
 
 def _RunCommand(args):
@@ -75,6 +57,7 @@ def _RunCommand(args):
 
 COMMAND_MAP = {
   'gen': _GenCommand,
+  'dist': _DistCommand,
   'run': _RunCommand,
 }
 
