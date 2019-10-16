@@ -36,8 +36,10 @@ def parse_args(argv=None):
   run.add_argument('args', nargs='*')
 
   argv = argv if argv is not None else sys.argv[1:]
-  if sys.argv[0] not in ('run', 'gen') and os.path.exists(argv[0]):
-    sys.argv.insert(0, 'run')
+  if argv and argv[0] not in ('run', 'gen') and os.path.exists(argv[0]):
+    argv.insert(0, 'run')
+  elif not argv:
+    argv = ['--help']
 
   return parser.parse_args(argv)
 
