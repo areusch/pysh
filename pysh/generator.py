@@ -40,12 +40,13 @@ _EMBEDDED_MODULE_NOTICE = '# PySH: Module embedded below'
 
 _NORMAL_PY_SCRIPT = """\
 from __future__ import print_function
+import sys
 try:
   import pysh
 except ImportError:
   print('pysh: script $0 requires the pysh package. Install it with:', file=sys.stderr)
-  print('      $ pip install {_PYSH_PIP_PACKAGE}')
-  raise SystemExit(8)
+  print('      $ pip install {_PYSH_PIP_PACKAGE}', file=sys.stderr)
+  sys.exit(8)
 pysh.main('$0')
 """.format(_PYSH_PIP_PACKAGE=_PYSH_PIP_PACKAGE)
 
