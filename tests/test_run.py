@@ -33,6 +33,29 @@ def test_run_directly():
                     b"foo foo\n")
 
 
+def test_argv0():
+  """argv0 should be overwritten to the script name."""
+  with tempfile.NamedTemporaryFile() as tf:
+    tf.write(
+      b'import sys\n'
+      b'sys.stdout.write("{}\\n".format(sys.argv[0]))\n'
+    )
+    tf.flush()
+
+    proc = subprocess.Popen(
+      [sys.executable, '-mpysh', 'gen', tf.name],
+      stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+    proc.wait()
+    assert proc.returncode == 0
+
+    proc = subprocess.Popen(
+      [tf.name],
+      stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    out, _ = proc.communicate(b'foo\n')
+    assert proc.returncode == 0
+    assert six.text_type(out, 'utf-8') == '{}\n'.format(tf.name)
+
+
 def test_stdin():
   """test using stdin/stdout.
 

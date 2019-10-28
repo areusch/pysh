@@ -119,6 +119,8 @@ class Executor:
     else:
       sys.path.insert(0, package_dir)
 
+    sys.argv[0] = self.script
+
     globals_locals = {'get_ipython': IPythonStub,
                       '__name__': '__main__'}
     try:
