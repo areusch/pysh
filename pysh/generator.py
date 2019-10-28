@@ -32,9 +32,6 @@ PYSH_INFO_SECTION = """\
 PYSH_BOOTSTRAP_SECTION_NAME = 'PySH Bootstrap'
 
 
-_PYSH_PIP_PACKAGE = 'https://github.com/areusch/pysh/archive/master.zip'
-
-
 _EMBEDDED_MODULE_NOTICE = '# PySH: Module embedded below'
 
 
@@ -43,12 +40,10 @@ from __future__ import print_function
 import sys
 try:
   import pysh
-except ImportError:
-  print('pysh: script $0 requires the pysh package. Install it with:', file=sys.stderr)
-  print('      $ pip install {_PYSH_PIP_PACKAGE}', file=sys.stderr)
-  sys.exit(8)
+except ImportError as e:
+  sys.exit(253)
 pysh.main('$0')
-""".format(_PYSH_PIP_PACKAGE=_PYSH_PIP_PACKAGE)
+"""
 
 
 _DISTRIBUTABLE_PY_SCRIPT = """\
@@ -77,14 +72,24 @@ def make_bootstrap_lines(dist):
 #  print('py={!s}'.format(_py), file=sys.stderr)
 
   sh_evals = (
-    ('python_bin=`which python3`; '
-     'if [ -z \"${python_bin}\" ]; then python_bin=`which python`; fi',),
-    ('echo', '"{_py}"'.format(_py=_py), '|', '${python_bin}', '-', '$@'),
-    ('exit', '$?'),
+    ('py="{_py}"'.format(_py=_py), 'code=0; set -o pipefail'),
+    ('python_bin=`which python3`;',),
+    ('if [ -n \"${python_bin}\" ]; then ',
+     '(', 'echo', '\"${py}\"', '|', '(', '${python_bin}',
+     '/dev/fd/3', '$@', '0<&4', ')', '3<&0', '; exit $?)', '4<&0 || code=$?;',
+     'if [ $code -ne 253 ]; then exit $code; fi; fi'),
+    ('python_bin=`which python`;', 'code=0'),
+    ('(', 'echo', '\"${py}\"', '|', '(', '${python_bin}',
+     '/dev/fd/3', '$@', '0<&4', ')', '3<&0', ')', '4<&0 || code=$?;'),
+    ('if [ $code -eq 253 ]; then',
+     'echo "pysh: script $0 requires the pysh package. Install it with:" >&2',
+     'echo "      $ pip install https://github.com/areusch/pysh/archive/master.zip"; ',
+     'fi'),
+    ('exit', '$code'),
   )
 #  print('shevals={!s}'.format(sh_evals[1][1]), file=sys.stderr)
 
-  return [' '.join(['"{}"'.format(_ESCAPE_SEQ.sub(r'\\\\\\\1', x).replace('"', '\\"'))
+  return [' '.join(['"{}"'.format(_ESCAPE_SEQ.sub(r'\\\\\\\1', x).replace('"', '\\"').replace('$', '\$'))
                     for x in ["eval"] + list(e)])
     for e in sh_evals]
 
@@ -132,7 +137,7 @@ class Parser:
       line = '' if self._last_newline else None
       try:
         line = next(self._f)
-        self._last_newline = line[-1] == '\n'
+        self._last_newline = line and line[-1] == '\n'
         line = line.rstrip('\r\n')
         self._peek_line_number += 1
       finally:
@@ -247,10 +252,10 @@ class ParsedScript:
     shbang = next(parser)
     missing_shbang = not shbang.startswith('#!')
     if not missing_shbang:
-      if shbang != SHBANG_LINE:
-        self._raise_or_warn(UnrecognizedScriptError(
+      if shbang != SHBANG_LINE and force:
+        raise UnrecognizedScriptError(
           parser.line_number, 0,
-          'Shbang line is for a different parser'))
+          'Shbang line is for a different parser')
 
     # Throw away the recognized shbang part.
     _, f_shbang_lines = parser.fetch()
@@ -370,8 +375,6 @@ def generate(script_path_arg, dist=False):
     os.rename(tmp_name, script_path_arg)
 
     st = os.stat(script_path_arg)
-    print('stat {}: {:o} {:o}'.format(script_path_arg, st.st_mode, stat.S_IXUSR), file=sys.stderr)
     if (st.st_mode & stat.S_IXUSR) == 0:
       new_mode = st.st_mode | stat.S_IXUSR
-      print('chmod {}: {:o}'.format(script_path_arg, new_mode), file=sys.stderr)
       os.chmod(script_path_arg, new_mode)

@@ -33,6 +33,54 @@ def test_run_directly():
                     b"foo foo\n")
 
 
+def test_stdin():
+  """test using stdin/stdout.
+
+  NOTE: the py27 tox run tests the case when pysh is installed only for py 2,
+  but a py 3 distribution exists.
+  """
+  with tempfile.NamedTemporaryFile() as tf:
+    tf.write(
+      b'import os, sys\n'
+      b'sys.stdout.write(sys.stdin.read())\n'
+    )
+    tf.flush()
+
+    proc = subprocess.Popen(
+      [sys.executable, '-mpysh', 'gen', tf.name],
+      stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+    proc.wait()
+    assert proc.returncode == 0
+
+    proc = subprocess.Popen(
+      [tf.name],
+      stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    out, _ = proc.communicate(b'foo\n')
+    assert proc.returncode == 0
+    assert out == b'foo\n'
+
+
+
+def test_subprocess_error():
+  with tempfile.NamedTemporaryFile() as tf:
+    tf.write(
+      b'import pysh\n'
+      b'try:\n'
+      b'  !exit 2\n'
+      b'  print("FAIL")\n'
+      b'except pysh.CalledProcessError as e:\n'
+      b'  print(e.returncode)\n'
+    )
+    tf.flush()
+
+    proc = subprocess.Popen(
+      [sys.executable, '-mpysh', 'run', tf.name],
+      stdout=subprocess.PIPE)
+    out, _ = proc.communicate()
+    assert proc.returncode == 0
+    assert out == b'2\n'
+
+
 def test_e2e_gen():
   temp_dir = tempfile.mkdtemp()
   try:
@@ -80,7 +128,7 @@ def test_e2e_gen_no_pysh():
                               stderr=subprocess.PIPE)
       out, err = proc.communicate()
       assert b'pysh: script ./test.sh requires the pysh package.' in err
-      assert proc.returncode == 8
+      assert proc.returncode == 253
     finally:
       subprocess.Popen(['pipenv', '--rm'],
                        cwd=temp_dir,

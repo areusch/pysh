@@ -85,7 +85,7 @@ class IPythonStub:
                             shell=True)
     proc.wait()
     if proc.returncode != 0:
-      raise subprocess.CalledProcessError(proc.returncode, args, out, None)
+      raise CalledProcessError(proc.returncode, args, None, None)
 
   def getoutput(self, *args):
     kw = dict(shell=True, stdout=subprocess.PIPE)
@@ -95,7 +95,7 @@ class IPythonStub:
     proc = subprocess.Popen([self.var_expand(a, depth=2) for a in args], **kw)
     out, _ = proc.communicate()
     if proc.returncode != 0:
-      raise subprocess.CalledProcessError(proc.returncode, args, out, None)
+      raise CalledProcessError(proc.returncode, args, out, None)
 
     return out
 
